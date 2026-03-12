@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# entorno
+.env
+venv/
+
+# modelos
+#*.pt
+*.weights
+
+# videos
+#*.mp4
+#*.avi
+
+# sistema
+.DS_Store
+
+# archivos generados por el programa
+log.txt
+log_ia_click_debug.txt
+log_visual_gui.txt
+show_frame_debug.txt
+src/FOTOS/
+src/REGISTROS_DE_EDICION/

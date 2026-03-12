@@ -24,7 +24,8 @@ https://ffmpeg.org/download.html
 
 ## Instalación
 
-git clone https://github.com/luisdl-dev/video-blur-editor
+git clone https://github.com/luisdl-dev/videoeditor-difuminador
+
 cd video-blur-editor
 
 pip install -r requirements.txt

@@ -28,7 +28,7 @@ git clone https://github.com/luisdl-dev/videoeditor-difuminador
 
 cd video-blur-editor
 
-pip install -r requirements_CPU.txt
+pip install -r requirements.txt
 
 ⚠️ Después de instalar, desinstala conflictos relacionados a otras versiones de opencv-python si se instaló automáticamente. Esto evita conflictos con opencv-contrib-python y problemas de trackers/difuminados:
 python -m pip uninstall -y opencv-python opencv-contrib-python opencv-python-headless

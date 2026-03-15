@@ -58,7 +58,6 @@
 # No fue necesario modificar otros métodos del pipeline.
 # ================================
 
-
 import sys
 import cv2
 print(f"[OPENCV] v={cv2.__version__} | legacy={hasattr(cv2, 'legacy')} | CSRT={hasattr(getattr(cv2, 'legacy', cv2), 'TrackerCSRT_create')}")
@@ -66,6 +65,7 @@ import numpy as np
 import os
 import json
 import math
+
 
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QLabel, QPushButton, QVBoxLayout, QFileDialog,
@@ -81,7 +81,7 @@ from PyQt5.QtCore import QPropertyAnimation, QTimer, Qt, QThread, pyqtSignal, QP
 from datetime import datetime
 
 import torch
-import torch_directml
+
 from ultralytics import YOLO
 import time  # ← ¡Agrega esta línea!
 
@@ -659,7 +659,7 @@ class IAFrameProcessor(QThread):
             self.procesamiento_terminado.emit(resultado)
 
     def run(self):
-        import threading, math, time, gc, torch, torch_directml, cv2
+        import threading, math, time, gc, torch, cv2
         from ultralytics import YOLO
         from ultralytics.utils import ops
 
@@ -668,15 +668,26 @@ class IAFrameProcessor(QThread):
 
         # 🔹 Inicializar DirectML y modelo dentro del hilo (esto evita cuelgues)
         try:
-            dml = torch_directml.device()
+            # Detectar dispositivo automáticamente
+            try:
+                import torch_directml
+                device = torch_directml.device()
+                modo = "DirectML GPU"
+            except Exception:
+                device = "cpu"
+                modo = "CPU"
+
+            print(f"[IA] Dispositivo seleccionado: {modo}")
+
+            # Cargar modelo
             model = YOLO("../models/best.pt")
-            model.model.to(dml).float().eval()
+            model.model.to(device).float().eval()
 
             # Warm-up (previene el freeze en la primera inferencia)
-            dummy = torch.zeros((1, 3, 960, 960), dtype=torch.float32).to(dml)
+            dummy = torch.zeros((1, 3, 960, 960), dtype=torch.float32).to(device)
             with torch.no_grad():
                 _ = model.model(dummy)
-            print("[IA][GPU] Modelo inicializado correctamente en hilo secundario.")
+            print(f"[IA] Modelo inicializado correctamente en {modo}")
         except Exception as e:
             print("[IA][ERROR] Fallo al inicializar DirectML:", e)
             self.procesamiento_terminado.emit({})
@@ -692,12 +703,12 @@ class IAFrameProcessor(QThread):
         def _store(idx, rects):
             if rects:
                 resultado[idx] = rects
-
+    
         total_frames = max(0, self.fin_frame - self.inicio_frame)
         total_windows = max(1, math.ceil(total_frames / WINDOW))
         windows_done = 0
 
-        print("[IA][GPU] Iniciando procesamiento DirectML con detección de movimiento.")
+        print(f"[IA] Iniciando procesamiento con detección de movimiento en modo {modo}")
 
         try:
             while frame_idx < self.fin_frame:
@@ -721,11 +732,11 @@ class IAFrameProcessor(QThread):
                 B_idx, B_frame = buffer[-1]
 
                 # === inferir extremos A y B en GPU ===
-                dets_A = self._inferir_directml(model, dml, A_frame, self.conf)
+                dets_A = self._inferir_directml(model, device, A_frame, self.conf)
                 _store(A_idx, dets_A)
 
                 if B_idx != A_idx:
-                    dets_B = self._inferir_directml(model, dml, B_frame, self.conf)
+                    dets_B = self._inferir_directml(model, device, B_frame, self.conf)
                     _store(B_idx, dets_B)
                 else:
                     dets_B = dets_A
@@ -742,7 +753,7 @@ class IAFrameProcessor(QThread):
 
                 if densificar and len(buffer) > 2:
                     for mid_idx, mid_frame in buffer[1:-1]:
-                        dets_mid = self._inferir_directml(model, dml, mid_frame, self.conf)
+                        dets_mid = self._inferir_directml(model, device, mid_frame, self.conf)
                         _store(mid_idx, dets_mid)
                         del dets_mid, mid_frame
 
@@ -873,30 +884,38 @@ class WarmupThread(QThread):
             print("[IA][Warmup][ERROR]", e)
 
     def run(self):
-        import torch, torch_directml, gc
+        import torch, gc
         from ultralytics import YOLO
 
         try:
-            dml = torch_directml.device()
+            # Detectar dispositivo
+            try:
+                import torch_directml
+                device = torch_directml.device()
+                modo = "DirectML GPU"
+            except Exception:
+                device = torch.device("cpu")
+                modo = "CPU"
+
+            print(f"[IA][Warmup] Inicializando modelo en {modo}")
 
             model = YOLO("../models/best.pt")
-            model.model.to(dml).float().eval()
+            model.model.to(device).float().eval()
 
-            # Warmup consistente con 960
-            dummy = torch.zeros((1, 3, 960, 960), dtype=torch.float32).to(dml)
+            # Warmup
+            dummy = torch.zeros((1, 3, 960, 960), dtype=torch.float32).to(device)
 
             with torch.no_grad():
                 _ = model.model(dummy)
 
-            print("[IA][Warmup] GPU DirectML inicializada correctamente.")
+            print(f"[IA][Warmup] Inicialización correcta en {modo}")
 
-            # Liberar explícitamente
             del dummy
             del model
             gc.collect()
 
         except Exception as e:
-            print("[IA][Warmup][ERROR]", e)        
+            print("[IA][Warmup][ERROR]", e)
 
 
 
@@ -4632,7 +4651,7 @@ class ExportThread(QThread):
         self.nombre_salida = nombre_salida
         self.bitrate_kbps = bitrate_kbps
         
-    def run(self):
+    def run_backup(self):
         from ffmpeg_gpu_saver import FFmpegGPUSaver
         t_inicio = datetime.now()
         log_ia_click(f"[EXPORT] ▶ Inicio exportación desde frame {self.inicio} hasta {self.fin}")
@@ -4716,7 +4735,255 @@ class ExportThread(QThread):
 
         self.terminado.emit(self.nombre_salida, self.fin - self.inicio + 1)
 
+    def run_backup2(self):
+        from ffmpeg_gpu_saver import FFmpegGPUSaver
+        t_inicio = datetime.now()
+        log_ia_click(f"[EXPORT] ▶ Inicio exportación desde frame {self.inicio} hasta {self.fin}")
         
+        self.app.cap.set(cv2.CAP_PROP_POS_FRAMES, self.inicio)
+        self.app.cap.grab()
+        ret, frame = self.app.cap.retrieve()
+        if not ret:
+            log_ia_click(f"[EXPORT] Error: No se pudo leer el frame inicial {self.inicio}")
+            return
+        
+        target_width = int(self.app.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        target_height = int(self.app.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        fps = self.app.fps if self.app.fps > 0 else 30
+
+        if target_width == 0 or target_height == 0:
+            log_ia_click(f"[EXPORT] Error: Dimensiones del video inválidas (ancho={target_width}, alto={target_height})")
+            return
+
+        if self.app.modo_exportacion == "normal":
+            saver = cv2.VideoWriter(
+                self.nombre_salida,
+                cv2.VideoWriter_fourcc(*'avc1'),
+                fps,
+                (target_width, target_height)
+            )
+            usar_ffmpeg = False
+        else:
+            # Detectar GPU dedicada
+            usar_gpu = False
+            try:
+                import platform
+                import subprocess
+                if platform.system() == "Windows":
+                    output = subprocess.check_output(
+                        "wmic path win32_VideoController get name", shell=True, text=True
+                    )
+                    if "NVIDIA" in output or "AMD" in output:
+                        usar_gpu = True
+            except Exception as e:
+                log_ia_click(f"[EXPORT] ⚠️ No se pudo detectar GPU: {e}")
+
+            if usar_gpu:
+                from ffmpeg_gpu_saver import FFmpegGPUSaver
+                saver = FFmpegGPUSaver(
+                    output_path=self.nombre_salida,
+                    width=target_width,
+                    height=target_height,
+                    fps=fps,
+                    bitrate_kbps=self.bitrate_kbps
+                )
+                log_ia_click(f"[EXPORT] Usando GPU dedicada para exportación")
+            else:
+                from ffmpeg_cpu_saver import FFmpegCPUSaver
+                saver = FFmpegCPUSaver(
+                    output_path=self.nombre_salida,
+                    width=target_width,
+                    height=target_height,
+                    fps=fps,
+                    bitrate_kbps=self.bitrate_kbps
+                )
+                log_ia_click(f"[EXPORT] Usando CPU para exportación")
+
+            usar_ffmpeg = True
+
+
+        for idx in range(self.inicio, self.fin):
+            if idx == self.inicio or (idx - self.inicio) % 30 == 0:
+                self.app.cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
+                self.app.cap.grab()
+                ret, frame = self.app.cap.retrieve()
+                if not ret:
+                    print(f"[EXPORT] Error: No se pudo leer el frame {idx} con set()")
+                    break
+            else:
+                ret, frame = self.app.cap.read()
+                if not ret:
+                    print(f"[EXPORT] Error: No se pudo leer el frame {idx} con read()")
+                    break
+
+            rects_ia = self.app.blur_ia_por_frame.get(idx, [])
+            rects_manual = self.app.blur_manual_por_frame.get(idx, [])
+
+            rects_exportar = [
+                r for r in rects_ia + rects_manual
+                if self.app.es_rect_valido(r)
+            ]
+
+            for r in rects_exportar:
+                x, y, w, h = r[:4]
+                aplicar_blur_capsula(frame, (x, y, w, h), self.app.blur_escala, kernel=self.app.blur_kernel)
+
+            # frame = cv2.resize(frame, (target_width, target_height))  # ← desactivado por optimización
+
+            if usar_ffmpeg:
+                saver.write_frame(frame)
+            else:
+                saver.write(frame)
+
+            self.progreso.emit(idx - self.inicio + 1)
+
+        if usar_ffmpeg:
+            saver.close()
+        else:
+            saver.release()
+
+        t_fin = datetime.now()
+        duracion = (t_fin - t_inicio).total_seconds()
+        fps_calc = (self.fin - self.inicio + 1) / duracion if duracion > 0 else 0
+        log_ia_click(f"[EXPORT] ⏱️ Exportación finalizada en {duracion:.2f} segundos ({fps_calc:.2f} fps promedio)")
+        log_ia_click(f"[EXPORT] Modo usado: {self.app.modo_exportacion.upper()}")
+
+        self.terminado.emit(self.nombre_salida, self.fin - self.inicio + 1)
+    
+    def run(self):
+        from ffmpeg_gpu_saver import FFmpegGPUSaver
+        t_inicio = datetime.now()
+        log_ia_click(f"[EXPORT] ▶ Inicio exportación desde frame {self.inicio} hasta {self.fin}")
+        
+        self.app.cap.set(cv2.CAP_PROP_POS_FRAMES, self.inicio)
+        self.app.cap.grab()
+        ret, frame = self.app.cap.retrieve()
+        if not ret:
+            log_ia_click(f"[EXPORT] Error: No se pudo leer el frame inicial {self.inicio}")
+            return
+        
+        target_width = int(self.app.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        target_height = int(self.app.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        fps = self.app.fps if self.app.fps > 0 else 30
+
+        if target_width == 0 or target_height == 0:
+            log_ia_click(f"[EXPORT] Error: Dimensiones del video inválidas (ancho={target_width}, alto={target_height})")
+            return
+
+        if self.app.modo_exportacion == "normal":
+            saver = cv2.VideoWriter(
+                self.nombre_salida,
+                cv2.VideoWriter_fourcc(*'avc1'),
+                fps,
+                (target_width, target_height)
+            )
+            usar_ffmpeg = False
+        else:
+            usar_gpu = self.verificar_gpu_ffmpeg("hevc_amf")  # prueba rápida del encoder
+
+            if usar_gpu:
+                from ffmpeg_gpu_saver import FFmpegGPUSaver
+                saver = FFmpegGPUSaver(
+                    output_path=self.nombre_salida,
+                    width=target_width,
+                    height=target_height,
+                    fps=fps,
+                    bitrate_kbps=self.bitrate_kbps
+                )
+                log_ia_click(f"[EXPORT] Usando GPU (driver/encoder disponible) para exportación")
+            else:
+                from ffmpeg_cpu_saver import FFmpegCPUSaver
+                saver = FFmpegCPUSaver(
+                    output_path=self.nombre_salida,
+                    width=target_width,
+                    height=target_height,
+                    fps=fps,
+                    bitrate_kbps=self.bitrate_kbps
+                )
+                log_ia_click(f"[EXPORT] ⚠️ Driver/encoder GPU no disponible. Usando CPU para exportación")
+
+            usar_ffmpeg = True
+
+
+
+        for idx in range(self.inicio, self.fin):
+            if idx == self.inicio or (idx - self.inicio) % 30 == 0:
+                self.app.cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
+                self.app.cap.grab()
+                ret, frame = self.app.cap.retrieve()
+                if not ret:
+                    print(f"[EXPORT] Error: No se pudo leer el frame {idx} con set()")
+                    break
+            else:
+                ret, frame = self.app.cap.read()
+                if not ret:
+                    print(f"[EXPORT] Error: No se pudo leer el frame {idx} con read()")
+                    break
+
+            rects_ia = self.app.blur_ia_por_frame.get(idx, [])
+            rects_manual = self.app.blur_manual_por_frame.get(idx, [])
+
+            rects_exportar = [
+                r for r in rects_ia + rects_manual
+                if self.app.es_rect_valido(r)
+            ]
+
+            for r in rects_exportar:
+                x, y, w, h = r[:4]
+                aplicar_blur_capsula(frame, (x, y, w, h), self.app.blur_escala, kernel=self.app.blur_kernel)
+
+            # frame = cv2.resize(frame, (target_width, target_height))  # ← desactivado por optimización
+
+            if usar_ffmpeg:
+                saver.write_frame(frame)
+            else:
+                saver.write(frame)
+
+            self.progreso.emit(idx - self.inicio + 1)
+
+        if usar_ffmpeg:
+            saver.close()
+        else:
+            saver.release()
+
+        t_fin = datetime.now()
+        duracion = (t_fin - t_inicio).total_seconds()
+        fps_calc = (self.fin - self.inicio + 1) / duracion if duracion > 0 else 0
+        log_ia_click(f"[EXPORT] ⏱️ Exportación finalizada en {duracion:.2f} segundos ({fps_calc:.2f} fps promedio)")
+        log_ia_click(f"[EXPORT] Modo usado: {self.app.modo_exportacion.upper()}")
+
+        self.terminado.emit(self.nombre_salida, self.fin - self.inicio + 1)
+    
+    def verificar_gpu_ffmpeg(self, encoder="hevc_amf"):
+        """
+        Intenta codificar 1 frame de prueba para verificar que el driver/codec está disponible.
+        Retorna True si funciona, False si falla.
+        """
+        import tempfile
+        import subprocess
+        import os
+
+        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp_file:
+            tmp_path = tmp_file.name
+
+        cmd = [
+            "ffmpeg",
+            "-f", "lavfi",
+            "-i", "testsrc=size=128x128:rate=1",
+            "-t", "1",
+            "-c:v", encoder,
+            "-pix_fmt", "yuv420p",
+            "-y",
+            tmp_path
+        ]
+        try:
+            subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            os.remove(tmp_path)
+            return True
+        except Exception:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+            return False
 
     def _recomprimir_con_bitrate(self, input_path):
         import subprocess

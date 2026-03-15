@@ -12,7 +12,7 @@ Aplicación en Python para detectar formas, rostros y aplicar difuminado manual 
 
 ## Requisitos del sistema
 
-- Python 3.10+
+- Python 3.10.11
 - FFmpeg instalado
 
 Instalación en Windows:
@@ -27,7 +27,18 @@ https://ffmpeg.org/download.html
 git clone https://github.com/luisdl-dev/video-blur-editor
 cd video-blur-editor
 
-pip install -r requirements.txt
+pip install -r requirements_CPU.txt
+
+⚠️ Después de instalar, desinstala conflictos relacionados a otras versiones de opencv-python si se instaló automáticamente. Esto evita conflictos con opencv-contrib-python y problemas de trackers/difuminados:
+python -m pip uninstall -y opencv-python opencv-contrib-python opencv-python-headless
+python -m pip uninstall -y numpy
+
+y vuelve a instalar:
+python -m pip install numpy==1.26.4
+python -m pip install opencv-contrib-python==4.7.0.72
+
+Modo GPU (AMD / DirectML, solo si tiene tarjeta dedicada AMD):
+pip install torch-directml
 
 ## Uso
 

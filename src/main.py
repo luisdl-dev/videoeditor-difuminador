@@ -680,7 +680,10 @@ class IAFrameProcessor(QThread):
             print(f"[IA] Dispositivo seleccionado: {modo}")
 
             # Cargar modelo
-            model = YOLO("../models/best.pt")
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            model_path = os.path.join(base_dir, "..", "models", "best.pt")
+            
+            #model = YOLO("../models/best.pt")
             model.model.to(device).float().eval()
 
             # Warm-up (previene el freeze en la primera inferencia)
@@ -898,8 +901,11 @@ class WarmupThread(QThread):
                 modo = "CPU"
 
             print(f"[IA][Warmup] Inicializando modelo en {modo}")
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            model_path = os.path.join(base_dir, "..", "models", "best.pt")
 
-            model = YOLO("../models/best.pt")
+            model = YOLO(model_path)
+            #model = YOLO("../models/best.pt")
             model.model.to(device).float().eval()
 
             # Warmup
@@ -1634,6 +1640,8 @@ class VideoReviewer(QWidget):
         self.ia_umbral_input = QLineEdit()
         self.ia_umbral_input.setFixedWidth(40)
         self.ia_umbral_input.setText("5")  # Valor por defecto
+        self.ia_umbral_label.hide()
+        self.ia_umbral_input.hide()
         
         # Crear QTimeEdit para exportación por rango
         self.export_inicio_time = QTimeEdit()
@@ -1653,15 +1661,19 @@ class VideoReviewer(QWidget):
         
 
         self.ia_estado_label = QLabel("IA: Detenida")
+        self.ia_estado_label.hide()
 
         self.btn_procesar_ia = QPushButton("PROCESAR IA")
         self.btn_procesar_ia.clicked.connect(self.iniciar_procesamiento_ia)
         self.conf_label = QLabel("Confianza mínima (conf):")
         self.conf_input = QLineEdit()
         self.conf_input.setText("0.5")  # Valor por defecto
+        self.conf_input.setMaximumWidth(50)
         
         self.auto_procesamiento_checkbox = QCheckBox("AUTO PROCESAMIENTO")
         self.auto_procesamiento_checkbox.setChecked(False)  # Desactivado por defecto
+        self.auto_procesamiento_checkbox.hide()
+
         #layout_principal.addWidget(self.auto_procesamiento_checkbox)  # O donde tengas tu layout
         self.en_pantalla_completa = False #atajo de teclado con F11 para pantalla completa
         self.auto_procesamiento_checkbox.stateChanged.connect(self.actualizar_estado_procesamiento)
@@ -1672,6 +1684,8 @@ class VideoReviewer(QWidget):
         duracion_layout = QHBoxLayout()
         duracion_layout.addWidget(self.ia_duracion_label)
         duracion_layout.addWidget(self.ia_duracion_input)
+        duracion_layout.addWidget(self.btn_procesar_ia)
+        duracion_layout.addStretch()
 
         umbral_layout = QHBoxLayout()
         umbral_layout.addWidget(self.ia_umbral_label)
@@ -1681,20 +1695,38 @@ class VideoReviewer(QWidget):
         umbral_layout.addWidget(self.export_inicio_time)
         umbral_layout.addWidget(QLabel("Fin exportación:"))
         umbral_layout.addWidget(self.export_fin_time)
+        umbral_layout.addStretch()
+
+        conf_layout = QHBoxLayout()
+        conf_layout.addWidget(self.conf_label)
+        conf_layout.addWidget(self.conf_input)
+        conf_layout.addWidget(self.debug_checkbox)
+        conf_layout.addStretch()
 
         # Layout principal IA
         ia_layout = QHBoxLayout()
         ia_layout.addLayout(duracion_layout)
+        ia_layout.addSpacing(20)
         ia_layout.addLayout(umbral_layout)
-        ia_layout.addWidget(self.btn_procesar_ia)
+        ia_layout.addSpacing(20)
+        ia_layout.addLayout(conf_layout)
+        #ia_layout.addWidget(self.btn_procesar_ia)
         ia_layout.addWidget(self.ia_estado_label)
         ia_layout.addWidget(self.auto_procesamiento_checkbox)  # O donde tengas tu layout
-        ia_layout.addWidget(self.conf_label)
-        ia_layout.addWidget(self.conf_input) 
-        
+        #ia_layout.addWidget(self.conf_label)
+        #ia_layout.addWidget(self.conf_input) 
         #ia_layout = QHBoxLayout()
-        ia_layout.addWidget(self.debug_checkbox)
+        #ia_layout.addWidget(self.debug_checkbox)
         # Agrega este layout al layout principal de la GUI
+        ia_layout.addStretch()
+
+        # ia_layout2 = QHBoxLayout()
+        # ia_layout2.addWidget(self.conf_label)
+        # ia_layout2.addWidget(self.conf_input) 
+        # #ia_layout = QHBoxLayout()
+        # ia_layout2.addWidget(self.debug_checkbox)
+        # ia_layout2.addStretch()
+
 
         # Botones principales
         btn_layout = QHBoxLayout()

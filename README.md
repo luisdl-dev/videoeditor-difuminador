@@ -20,7 +20,10 @@ Instalación en Windows:
 1. Descargar FFmpeg
 https://ffmpeg.org/download.html
 
-2. Agregar ffmpeg al PATH
+instalarlo o extraerlo en C:\ffmpeg
+
+3. Agregar ffmpeg al PATH
+ir al path en las variables de entorno de Windows y agregar la siguiente ruta C:\ffmpeg\bin
 
 ## Instalación
 
